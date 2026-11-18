@@ -1,0 +1,7 @@
+﻿langchain-groq
+langgraph
+requests
+python-nmap
+dnspython
+streamlit
+python-dotenv
