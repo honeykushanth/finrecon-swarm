@@ -6,3 +6,4 @@ dnspython
 streamlit
 python-dotenv
 langchain-ollama
+fpdf2

@@ -21,22 +21,18 @@ from tools.agent_tools import (
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-def _extract_json_block(text: str, expect_list: bool = False) -> Any:
-    """Safely extracts a JSON object or array from LLM output (strips markdown fences)."""
+def _extract_json_object(text: str) -> Dict[str, Any]:
+    """Safely extracts a JSON object from LLM output."""
     cleaned = re.sub(r"```(?:json)?", "", text, flags=re.IGNORECASE).replace("```", "").strip()
-    start_char, end_char = ("[", "]") if expect_list else ("{", "}")
-    start_idx = cleaned.find(start_char)
-    end_idx = cleaned.rfind(end_char)
+    start_idx = cleaned.find("{")
+    end_idx = cleaned.rfind("}")
     if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
         cleaned = cleaned[start_idx : end_idx + 1]
     return json.loads(cleaned)
 
 
 def supervisor_node(state: AgentState) -> Dict[str, Any]:
-    """
-    Orchestrator Node: Evaluates global state progress, issues a tactical directive
-    via the fast LLM tier, and routes to the next specialized agent with strict loop guards.
-    """
+    """Orchestrator Node: Evaluates global state and routes to the next specialized agent."""
     logs = list(state.get("execution_log", []))
     providers = list(state.get("llm_provider_log", []))
     errors = list(state.get("errors", []))
@@ -46,7 +42,6 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
     done_vuln = any("[VULN]" in entry for entry in logs)
     done_report = any("[REPORT]" in entry for entry in logs)
 
-    # Deterministic progression guard prevents infinite loops or skipped stages
     if not done_osint:
         expected_next = "osint_agent"
     elif not done_infra and state.get("resolved_ips"):
@@ -76,10 +71,10 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
     messages = [
         SystemMessage(
             content=(
-                "You are the Supervisor Agent of FinRecon-Swarm, an ethical passive BFSI "
+                "You are the Supervisor Agent of FinRecon-Swarm, an ethical 100% passive BFSI "
                 "cybersecurity reconnaissance framework. Given the current workflow state, "
-                "confirm the next node and write a concise 1-sentence tactical directive. "
-                "Respond ONLY with valid JSON: "
+                "confirm the next node and write a concise 1-sentence tactical directive emphasizing passive OSINT. "
+                "Respond ONLY with a valid JSON object: "
                 '{"next_node": "<node_name>", "directive": "<1 sentence>"}'
             )
         ),
@@ -88,10 +83,12 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
 
     directive = f"Proceeding to {expected_next}."
     try:
-        raw_resp, provider_used, warns = invoke_llm_with_failover(messages, tier="fast", temperature=0.0)
+        raw_resp, provider_used, warns = invoke_llm_with_failover(
+            messages, tier="fast", temperature=0.0, json_mode=True
+        )
         providers.append(f"Supervisor -> {provider_used}")
         errors.extend(warns)
-        parsed = _extract_json_block(raw_resp, expect_list=False)
+        parsed = _extract_json_object(raw_resp)
         directive = parsed.get("directive", directive)
     except Exception as e:
         errors.append(f"Supervisor directive fallback: {str(e)[:120]}")
@@ -107,26 +104,20 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
 
 
 def osint_agent_node(state: AgentState) -> Dict[str, Any]:
-    """
-    BFSI Asset & OSINT Mapper: Passively enumerates subdomains (crt.sh),
-    flags expired SSL certificates, resolves IPv4 hosts, and maps target ASN.
-    """
+    """BFSI Asset & OSINT Mapper: Passive crt.sh recon, DNS resolution, and ASN lookup."""
     target = state["target_domain"]
     logs = list(state.get("execution_log", []))
     errors = list(state.get("errors", []))
 
-    # 1. Passive Certificate Transparency recon
     crt_data = json.loads(passive_subdomain_recon.invoke({"domain": target}))
     subdomains = crt_data.get("subdomains", [target])
     expired_certs = crt_data.get("expired_certificates_sample", [])
     errors.extend(crt_data.get("errors", []))
 
-    # 2. Resilient 3-tier DNS resolution
     dns_data = json.loads(resolve_hosts_to_ips.invoke({"subdomains": subdomains}))
     resolved_ips = dns_data.get("unique_ips", [])
     errors.extend(dns_data.get("errors", []))
 
-    # 3. Passive ASN identification on primary IP
     asn_details: Dict[str, Any] = {}
     target_asn = "Unknown"
     if resolved_ips:
@@ -150,10 +141,7 @@ def osint_agent_node(state: AgentState) -> Dict[str, Any]:
 
 
 def infra_agent_node(state: AgentState) -> Dict[str, Any]:
-    """
-    Infrastructure & Service Profiler: Queries Shodan InternetDB passively
-    for every resolved IP to gather open ports, CPEs, CVEs, and BFSI risk flags.
-    """
+    """Infrastructure & Service Profiler: Passive Shodan InternetDB telemetry."""
     ips = state.get("resolved_ips", [])
     logs = list(state.get("execution_log", []))
 
@@ -176,16 +164,14 @@ def infra_agent_node(state: AgentState) -> Dict[str, Any]:
 
 def vuln_compliance_agent_node(state: AgentState) -> Dict[str, Any]:
     """
-    Vulnerability & Compliance Analyst: Enriches top CVEs via CISA KEV + NVD/OSV,
-    loads bfsi_compliance_kb.md, and uses the deep reasoning LLM tier to map
-    technical findings directly to PCI-DSS v4.0, DORA, NYDFS Part 500, GLBA, and OWASP API.
+    Vulnerability & Compliance Analyst: Enriches top CVEs via CISA KEV + NVD/OSV
+    and maps technical findings to BFSI regulatory controls using strict JSON Mode.
     """
     logs = list(state.get("execution_log", []))
     providers = list(state.get("llm_provider_log", []))
     errors = list(state.get("errors", []))
     infra_map = state.get("infrastructure_map", {})
 
-    # Aggregate raw CVEs across all profiled hosts
     all_cves: List[str] = []
     infra_highlights: Dict[str, Any] = {}
     for ip, info in infra_map.items():
@@ -228,20 +214,22 @@ def vuln_compliance_agent_node(state: AgentState) -> Dict[str, Any]:
             content=(
                 "You are a Principal BFSI Vulnerability & Compliance Analyst. "
                 "Using ONLY the evidence provided and the BFSI Compliance Knowledge Base below, "
-                "produce a prioritized Compliance Risk Register as a strict JSON array.\n\n"
+                "produce a prioritized Compliance Risk Register wrapped inside a strict JSON object "
+                'with a single top-level key "findings": {"findings": [ ... ]}.\n\n'
                 "Include BOTH:\n"
-                "1) Enriched CVEs (applying PCI-DSS 6.3 >30d and DORA Art. 11 ransomware/KEV modifiers)\n"
+                "1) Every enriched CVE (applying PCI-DSS 6.3 >30d and DORA Art. 11 ransomware/KEV modifiers)\n"
                 "2) Infrastructure / Certificate findings (exposed ports like SSH/HTTP/DBs, expired certs, or 3rd-party appliances)\n\n"
-                "Each JSON object MUST contain exactly these keys:\n"
+                'Each object inside "findings" MUST contain exactly these keys:\n'
                 '  "finding_id" (CVE ID or concise ID like "PORT-22-SSH"),\n'
                 '  "asset" (IP or subdomain),\n'
                 '  "title" (short technical title),\n'
-                '  "base_cvss" (score or "N/A"),\n'
+                '  "base_cvss" (string score or "N/A"),\n'
+                '  "in_cisa_kev" (boolean true/false),\n'
                 '  "adjusted_severity" ("CRITICAL", "HIGH", "MEDIUM", or "LOW"),\n'
                 '  "violated_controls" (list of exact framework controls, e.g. ["PCI-DSS Req 6.3", "DORA Art. 11"]),\n'
                 '  "rationale" (1-2 sentences citing evidence and severity modifier),\n'
                 '  "remediation" (concrete defensive action)\n\n'
-                "Respond ONLY with a valid JSON array. No extra prose.\n\n"
+                "Respond ONLY with valid JSON. Escape all quotes properly.\n\n"
                 f"=== BFSI COMPLIANCE KNOWLEDGE BASE ===\n{compliance_kb}"
             )
         ),
@@ -250,29 +238,44 @@ def vuln_compliance_agent_node(state: AgentState) -> Dict[str, Any]:
 
     findings: List[Dict[str, Any]] = []
     try:
-        raw_resp, provider_used, warns = invoke_llm_with_failover(messages, tier="reasoning", temperature=0.1)
+        raw_resp, provider_used, warns = invoke_llm_with_failover(
+            messages, tier="reasoning", temperature=0.1, json_mode=True
+        )
         providers.append(f"Vulnerability & Compliance Analyst -> {provider_used}")
         errors.extend(warns)
-        parsed = _extract_json_block(raw_resp, expect_list=True)
-        if isinstance(parsed, list):
-            findings = parsed
+        parsed = _extract_json_object(raw_resp)
+        raw_list = parsed.get("findings", [])
+        if isinstance(raw_list, list) and raw_list:
+            findings = raw_list
         else:
-            raise ValueError("LLM returned non-list JSON.")
+            raise ValueError("JSON object missing non-empty 'findings' array.")
     except Exception as e:
         errors.append(f"Compliance JSON parsing fallback: {str(e)[:140]}")
-        findings = [
-            {
+        for cve in enriched_bundle.get("enriched_top_cves", []):
+            findings.append({
                 "finding_id": cve.get("cve_id", "UNKNOWN"),
                 "asset": state["target_domain"],
                 "title": cve.get("description", "")[:90],
                 "base_cvss": str(cve.get("cvss_score", "N/A")),
+                "in_cisa_kev": bool(cve.get("in_cisa_kev", False)),
                 "adjusted_severity": "CRITICAL" if cve.get("in_cisa_kev") else cve.get("severity", "HIGH"),
                 "violated_controls": ["PCI-DSS Req 6.3"] + (["DORA Art. 11"] if cve.get("known_ransomware_dora_11") else []),
                 "rationale": "Automated fallback mapping applied from enriched NVD/CISA KEV telemetry.",
                 "remediation": "Patch affected software component immediately and verify perimeter segmentation.",
-            }
-            for cve in enriched_bundle.get("enriched_top_cves", [])
-        ]
+            })
+        for ip, info in infra_map.items():
+            for alert in info.get("bfsi_port_alerts", []):
+                findings.append({
+                    "finding_id": f"PORT-{alert.split(':')[0].replace('Port ', '').strip()}",
+                    "asset": ip,
+                    "title": alert,
+                    "base_cvss": "N/A",
+                    "in_cisa_kev": False,
+                    "adjusted_severity": "CRITICAL" if ("3389" in alert or "22" in alert) else "HIGH",
+                    "violated_controls": ["NYDFS Part 500"],
+                    "rationale": "Sensitive port exposed on public internet perimeter.",
+                    "remediation": "Restrict administrative/plaintext ports behind VPN + MFA or enforce TLS.",
+                })
 
     logs.append(
         f"[VULN] Enriched {len(enriched_bundle.get('enriched_top_cves', []))} priority CVEs "
@@ -290,10 +293,7 @@ def vuln_compliance_agent_node(state: AgentState) -> Dict[str, Any]:
 
 
 def report_synthesizer_node(state: AgentState) -> Dict[str, Any]:
-    """
-    Report Synthesizer Agent: Aggregates the final LangGraph state into an
-    executive, CISO-ready BFSI Markdown risk report grounded in report_template.md.
-    """
+    """Report Synthesizer Agent: Generates CISO-ready BFSI Markdown report grounded in exact telemetry."""
     logs = list(state.get("execution_log", []))
     providers = list(state.get("llm_provider_log", []))
     errors = list(state.get("errors", []))
@@ -306,7 +306,6 @@ def report_synthesizer_node(state: AgentState) -> Dict[str, Any]:
     )
     current_date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-    # Build a clean token-efficient summary of infrastructure_map (without dumping 100+ raw CVE IDs)
     compact_infra = {
         ip: {
             "hostnames": info.get("hostnames", []),
@@ -319,6 +318,9 @@ def report_synthesizer_node(state: AgentState) -> Dict[str, Any]:
         for ip, info in state.get("infrastructure_map", {}).items()
     }
 
+    enriched_cves = state.get("enriched_cves", [])
+    kev_hits = [c.get("cve_id") for c in enriched_cves if c.get("in_cisa_kev")]
+
     report_context = {
         "target_domain": state["target_domain"],
         "report_date": current_date,
@@ -328,6 +330,11 @@ def report_synthesizer_node(state: AgentState) -> Dict[str, Any]:
         "resolved_ips": state.get("resolved_ips", []),
         "expired_certificates_sample": state.get("expired_certificates", [])[:5],
         "infrastructure_summary": compact_infra,
+        "exact_kev_metrics": {
+            "cisa_kev_hit_count": len(kev_hits),
+            "cisa_kev_cve_ids": kev_hits,
+            "enriched_cve_count": len(enriched_cves),
+        },
         "compliance_risk_register": state.get("cve_findings", []),
         "passive_methodology_note": "100% passive reconnaissance via Certificate Transparency, DNS, BGP/ASN, Shodan InternetDB, CISA KEV, and NVD API 2.0. Zero active exploitation performed.",
     }
@@ -339,11 +346,13 @@ def report_synthesizer_node(state: AgentState) -> Dict[str, Any]:
                 "BFSI External Attack Surface & Regulatory Risk Report. Follow the exact section "
                 "structure of the provided Markdown template, replacing all placeholders with rich, "
                 "accurate data from the JSON telemetry.\n\n"
-                "Requirements:\n"
+                "Strict Accuracy Requirements:\n"
+                "- Use standard ASCII hyphens (-) and spaces instead of special Unicode dashes.\n"
+                "- Cite the EXACT count from `exact_kev_metrics.cisa_kev_hit_count` when mentioning CISA KEV hits.\n"
                 "- Use clean Markdown tables for Asset Inventory, Exposed Attack Surface, and the Compliance Risk Register.\n"
                 "- Clearly highlight CRITICAL risks, CISA KEV hits, and specific PCI-DSS v4.0, DORA, NYDFS Part 500, GLBA, or OWASP API violations.\n"
-                "- Add a concise '5. Strategic Remediation Roadmap (30/60/90-Day)' section at the end tailored for a BFSI security leadership team.\n"
-                "- Never fabricate CVEs, IPs, or services not present in the JSON input.\n\n"
+                "- Add a concise '## 5. Strategic Remediation Roadmap (30/60/90-Day)' section at the end.\n"
+                "- Never fabricate CVEs, IPs, counts, or services not present in the JSON input.\n\n"
                 f"=== REPORT TEMPLATE ===\n{report_template}"
             )
         ),
@@ -354,7 +363,6 @@ def report_synthesizer_node(state: AgentState) -> Dict[str, Any]:
     providers.append(f"Report Synthesizer -> {provider_used}")
     errors.extend(warns)
 
-    # Persist generated report locally in reports/
     reports_dir = BASE_DIR / "reports"
     reports_dir.mkdir(exist_ok=True)
     safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", state["target_domain"])

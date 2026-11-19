@@ -8,7 +8,6 @@ from langchain_groq import ChatGroq
 from langchain_ollama import ChatOllama
 
 BASE_DIR = Path(__file__).resolve().parent
-# utf-8-sig safely strips Windows PowerShell UTF-8 BOM if present in .env
 load_dotenv(dotenv_path=BASE_DIR / ".env", override=True, encoding="utf-8-sig")
 
 GROQ_FAST_MODEL = os.getenv("GROQ_FAST_MODEL", "openai/gpt-oss-20b")
@@ -25,18 +24,12 @@ def _has_valid_groq_key() -> bool:
 def invoke_llm_with_failover(
     messages: List[BaseMessage],
     tier: str = "fast",
-    temperature: float = 0.1
+    temperature: float = 0.1,
+    json_mode: bool = False,
 ) -> Tuple[str, str, List[str]]:
     """
     Invokes the assigned Groq open-weight LLM with automatic fallback to local Ollama.
-
-    Args:
-        messages: List of LangChain SystemMessage/HumanMessage objects.
-        tier: 'fast' (routing/extraction) or 'reasoning' (compliance & executive synthesis).
-        temperature: Sampling temperature.
-
-    Returns:
-        Tuple of (response_text, provider_used_label, failover_warnings)
+    Supports native JSON mode on both Groq and Ollama to prevent malformed JSON responses.
     """
     warnings: List[str] = []
 
@@ -50,12 +43,16 @@ def invoke_llm_with_failover(
     if _has_valid_groq_key():
         for model_name in groq_candidates:
             try:
-                llm = ChatGroq(
-                    model=model_name,
-                    temperature=temperature,
-                    max_retries=1,
-                    timeout=45,
-                )
+                kwargs = {
+                    "model": model_name,
+                    "temperature": temperature,
+                    "max_retries": 1,
+                    "timeout": 45,
+                }
+                if json_mode:
+                    kwargs["model_kwargs"] = {"response_format": {"type": "json_object"}}
+
+                llm = ChatGroq(**kwargs)
                 resp = llm.invoke(messages)
                 content = resp.content if isinstance(resp.content, str) else str(resp.content)
                 return content, f"Groq ({model_name})", warnings
@@ -64,15 +61,19 @@ def invoke_llm_with_failover(
                 reason = "HTTP 429 Rate Limit" if "429" in err_msg else type(e).__name__
                 warnings.append(f"Groq [{model_name}] failed ({reason}): {err_msg[:140]}")
     else:
-        warnings.append("GROQ_API_KEY missing or still set to placeholder 'gsk_my_key' — routing directly to Ollama.")
+        warnings.append("GROQ_API_KEY missing or placeholder — routing directly to Ollama.")
 
     # 2. Automatic Failover: Local Ollama Instance
     try:
-        ollama_llm = ChatOllama(
-            model=OLLAMA_FALLBACK_MODEL,
-            base_url=OLLAMA_BASE_URL,
-            temperature=temperature,
-        )
+        ollama_kwargs = {
+            "model": OLLAMA_FALLBACK_MODEL,
+            "base_url": OLLAMA_BASE_URL,
+            "temperature": temperature,
+        }
+        if json_mode:
+            ollama_kwargs["format"] = "json"
+
+        ollama_llm = ChatOllama(**ollama_kwargs)
         resp = ollama_llm.invoke(messages)
         content = resp.content if isinstance(resp.content, str) else str(resp.content)
         return content, f"Ollama Local Failover ({OLLAMA_FALLBACK_MODEL})", warnings
