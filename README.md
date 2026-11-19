@@ -129,23 +129,23 @@ Covered test cases:
 
 ```text
 finrecon-swarm/
-??? app.py                     # Streamlit Command Center (live streaming UI + PDF/MD export)
-??? state_schema.py            # Shared LangGraph AgentState TypedDict schema
-??? llm_factory.py             # Groq primary + local Ollama failover engine (with JSON Mode)
-??? bfsi_compliance_kb.md      # Authoritative PCI-DSS v4.0, DORA, NYDFS, GLBA, OWASP API KB
-??? report_template.md         # Executive BFSI report structure template
-??? .env.example               # Environment variable template (safe for version control)
-??? agents/
-?   ??? nodes.py               # All 5 LangGraph agent node implementations
-?   ??? graph.py               # Stateful LangGraph DAG compiler & streaming runner
-??? tools/
-?   ??? osint_tools.py         # Passive crt.sh scraper, 3-tier DNS/DoH, ASN failover
-?   ??? infra_tools.py         # Shodan InternetDB profiler + BFSI port/vendor risk engine
-?   ??? vuln_tools.py          # CISA KEV + NVD API 2.0 + OSV.dev prioritization engine
-?   ??? agent_tools.py         # LangChain @tool wrappers
-??? utils/
-?   ??? pdf_exporter.py        # Styled A4 executive PDF report generator (fpdf2)
-??? tests/
-?   ??? test_suite.py          # Automated unit, compliance, PDF, and Ollama failover tests
-??? reports/                   # Generated Markdown and Executive PDF sample reports
+├── app.py                     # Streamlit Command Center (live streaming UI + PDF/MD export)
+├── state_schema.py            # Shared LangGraph AgentState TypedDict schema
+├── llm_factory.py             # Groq primary + local Ollama failover engine (with JSON Mode)
+├── bfsi_compliance_kb.md      # Authoritative PCI-DSS v4.0, DORA, NYDFS, GLBA, OWASP API KB
+├── report_template.md         # Executive BFSI report structure template
+├── .env.example               # Environment variable template (safe for version control)
+├── agents/
+│   ├── nodes.py               # All 5 LangGraph agent node implementations
+│   └── graph.py               # Stateful LangGraph DAG compiler & streaming runner
+├── tools/
+│   ├── osint_tools.py         # Passive crt.sh scraper, 3-tier DNS/DoH, ASN failover
+│   ├── infra_tools.py         # Shodan InternetDB profiler + BFSI port/vendor risk engine
+│   ├── vuln_tools.py          # CISA KEV + NVD API 2.0 + OSV.dev prioritization engine
+│   └── agent_tools.py         # LangChain @tool wrappers
+├── utils/
+│   └── pdf_exporter.py        # Styled A4 executive PDF report generator (fpdf2)
+├── tests/
+│   └── test_suite.py          # Automated unit, compliance, PDF, and Ollama failover tests
+└── reports/                   # Generated Markdown and Executive PDF sample reports
 ```
