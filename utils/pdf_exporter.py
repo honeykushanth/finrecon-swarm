@@ -1,4 +1,4 @@
-﻿# utils/pdf_exporter.py
+# utils/pdf_exporter.py
 import re
 from typing import List
 from fpdf import FPDF
@@ -13,6 +13,8 @@ def _sanitize_latin1(text: str) -> str:
     }
     for src, dst in replacements.items():
         text = text.replace(src, dst)
+    # Replace HTML line breaks cleanly
+    text = re.sub(r"<br\s*/?>", "; ", text, flags=re.IGNORECASE)
     # Clean Markdown links [label](url) -> label
     text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
     # Strip markdown bold/code/italic markers

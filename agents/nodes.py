@@ -1,4 +1,4 @@
-﻿# agents/nodes.py
+# agents/nodes.py
 import json
 import re
 from datetime import datetime, timezone
@@ -348,6 +348,7 @@ def report_synthesizer_node(state: AgentState) -> Dict[str, Any]:
                 "accurate data from the JSON telemetry.\n\n"
                 "Strict Accuracy Requirements:\n"
                 "- Use standard ASCII hyphens (-) and spaces instead of special Unicode dashes.\n"
+                "- Never use HTML tags like <br> inside Markdown tables; separate items with semicolons or commas instead.\n"
                 "- Cite the EXACT count from `exact_kev_metrics.cisa_kev_hit_count` when mentioning CISA KEV hits.\n"
                 "- Use clean Markdown tables for Asset Inventory, Exposed Attack Surface, and the Compliance Risk Register.\n"
                 "- Clearly highlight CRITICAL risks, CISA KEV hits, and specific PCI-DSS v4.0, DORA, NYDFS Part 500, GLBA, or OWASP API violations.\n"

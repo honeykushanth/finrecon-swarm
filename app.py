@@ -1,4 +1,4 @@
-﻿# app.py
+# app.py
 import os
 import re
 import pandas as pd
@@ -52,7 +52,7 @@ with st.sidebar:
     launch_btn = st.button(
         "🚀 Launch Agent Swarm",
         type="primary",
-        use_container_width=True,
+        width="stretch",
         disabled=not (ethical_confirm and target_input.strip()),
     )
 
@@ -152,7 +152,7 @@ if state:
                 data=report_md.encode("utf-8"),
                 file_name=f"{safe_slug}_bfsi_report.md",
                 mime="text/markdown",
-                use_container_width=True,
+                width="stretch",
             )
 
         with dl2:
@@ -162,7 +162,7 @@ if state:
                 data=pdf_bytes,
                 file_name=f"{safe_slug}_bfsi_report.pdf",
                 mime="application/pdf",
-                use_container_width=True,
+                width="stretch",
             )
 
         st.divider()
@@ -195,7 +195,7 @@ if state:
                 default=["CRITICAL", "HIGH", "MEDIUM", "LOW"],
             )
             filtered_df = df_risk[df_risk["Severity"].isin(sev_filter)] if sev_filter else df_risk
-            st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+            st.dataframe(filtered_df, width="stretch", hide_index=True)
         else:
             st.info("No compliance findings generated for this target.")
 
